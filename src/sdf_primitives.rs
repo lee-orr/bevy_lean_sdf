@@ -15,7 +15,7 @@ pub enum SdfPrimitive {
 
 impl SDF for SdfPrimitive {
     fn value_at_point(&self, point: &Vec3) -> f32 {
-        let point = point.clone();
+        let point = *point;
         match self {
             SdfPrimitive::Sphere(radius) => sphere_sdf(point, *radius),
             SdfPrimitive::Box(bounds) => box_sdf(point, *bounds),
