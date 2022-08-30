@@ -10,7 +10,6 @@ pub mod utils;
 pub mod sdf_object;
 pub mod sdf_operations;
 pub mod sdf_primitives;
-pub mod sdf_trait;
 
 /// A plugin
 pub struct HelloWorldPlugin;

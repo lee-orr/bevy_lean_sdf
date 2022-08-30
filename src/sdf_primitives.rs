@@ -2,23 +2,22 @@
 
 use bevy::prelude::Vec3;
 
-use crate::sdf_trait::SDF;
-
 /// The basic primitives comprising an Signed Distance Field
 #[derive(Debug, Clone, PartialEq)]
-pub enum SdfPrimitive {
+pub enum SDFPrimitive {
     /// Defines a sphere by it's radius
     Sphere(f32),
     /// Defines a box, provided it's half bounds
     Box(Vec3),
 }
 
-impl SDF for SdfPrimitive {
-    fn value_at_point(&self, point: &Vec3) -> f32 {
+impl SDFPrimitive {
+    /// Get the value of the SDF at a given point
+    pub fn value_at_point(&self, point: &Vec3) -> f32 {
         let point = *point;
         match self {
-            SdfPrimitive::Sphere(radius) => sphere_sdf(point, *radius),
-            SdfPrimitive::Box(bounds) => box_sdf(point, *bounds),
+            SDFPrimitive::Sphere(radius) => sphere_sdf(point, *radius),
+            SDFPrimitive::Box(bounds) => box_sdf(point, *bounds),
         }
     }
 }
@@ -40,7 +39,7 @@ mod tests {
 
     #[test]
     fn calculates_sphere_sdf() {
-        let sdf = SdfPrimitive::Sphere(1.);
+        let sdf = SDFPrimitive::Sphere(1.);
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
         let surface = sdf.value_at_point(&Vec3::Y);
@@ -53,7 +52,7 @@ mod tests {
 
     #[test]
     fn calculates_box_sdf() {
-        let sdf = SdfPrimitive::Box(Vec3::new(1., 2., 1.));
+        let sdf = SDFPrimitive::Box(Vec3::new(1., 2., 1.));
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
         let surface = sdf.value_at_point(&(Vec3::Y * 2.));
