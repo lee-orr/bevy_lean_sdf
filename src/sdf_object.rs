@@ -7,22 +7,23 @@ use bevy::prelude::*;
 pub struct SDFElement {
     /// The SDF Primitive
     pub primitive: SDFPrimitive,
-    /// The Translation of the primitive
-    pub translation: Vec3,
-    /// Rotation of the primitive
-    pub rotation: Quat,
-    /// Scale of the primitive
-    pub scale: f32,
+    /// The transform matrix
+    transform: Mat4,
+    /// The transform matrix
+    inverse: Mat4,
+    // the scale
+    scale: f32,
     /// Operation for joining the object with the previous object
     pub operation: SDFOperators,
 }
 
 impl Default for SDFElement {
     fn default() -> Self {
+        let transform = Mat4::from_scale(Vec3::ONE);
         Self {
             primitive: SDFPrimitive::Sphere(1.),
-            translation: Default::default(),
-            rotation: Default::default(),
+            inverse: transform.inverse(),
+            transform,
             scale: 1.,
             operation: SDFOperators::Union,
         }
@@ -30,14 +31,49 @@ impl Default for SDFElement {
 }
 
 impl SDFElement {
+    /// Make `SDFElement` with a primitive
+    pub fn with_primitive(mut self, primitive: SDFPrimitive) -> Self {
+        self.primitive = primitive;
+        self
+    }
+
+    /// Make `SDFElement` with an operation
+    pub fn with_operation(mut self, operation: SDFOperators) -> Self {
+        self.operation = operation;
+        self
+    }
+
+    /// Make `SDFElement` with a translation
+    pub fn with_translation(mut self, translation: Vec3) -> Self {
+        let (scale, rotation, _) = self.transform.to_scale_rotation_translation();
+        self.transform = Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        self.inverse = self.transform.inverse();
+        self
+    }
+
+    /// Make `SDFElement` with a rotation
+    pub fn with_rotation(mut self, rotation: Quat) -> Self {
+        let (scale, _, translation) = self.transform.to_scale_rotation_translation();
+        self.transform = Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        self.inverse = self.transform.inverse();
+        self
+    }
+
+    /// Make `SDFElement` with a scale
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        let (_, rotation, translation) = self.transform.to_scale_rotation_translation();
+        let scale = scale.abs();
+        self.scale = scale;
+        let scale = scale * Vec3::ONE;
+        self.transform = Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        self.inverse = self.transform.inverse();
+        self
+    }
+
     /// Get the value of the SDF at a given point
     pub fn value_at_point(&self, point: &Vec3) -> f32 {
         let scale = self.scale;
-        let rotation = self.rotation;
-        let translation = self.translation;
-        let transform =
-            Mat4::from_scale_rotation_translation(Vec3::ONE * scale, rotation, translation)
-                .inverse();
+        let transform = self.inverse;
         self.primitive
             .value_at_point(&(transform.transform_point3(*point)))
             * scale
@@ -78,10 +114,7 @@ mod tests {
 
     #[test]
     fn translates_a_sdf() {
-        let sdf = SDFElement {
-            translation: Vec3::X,
-            ..default()
-        };
+        let sdf = SDFElement::default().with_translation(Vec3::X);
 
         let interior = sdf.value_at_point(&Vec3::X);
         let surface = sdf.value_at_point(&Vec3::ZERO);
@@ -94,11 +127,9 @@ mod tests {
 
     #[test]
     fn rotates_a_sdf() {
-        let sdf = SDFElement {
-            primitive: SDFPrimitive::Box(Vec3::new(1., 2., 1.)),
-            rotation: Quat::from_euler(EulerRot::XYZ, 0., 0., 90. * PI / 180.),
-            ..default()
-        };
+        let sdf = SDFElement::default()
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., 0., 90. * PI / 180.))
+            .with_primitive(SDFPrimitive::Box(Vec3::new(1., 2., 1.)));
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
         let surface = sdf.value_at_point(&(Vec3::Y));
@@ -111,12 +142,10 @@ mod tests {
 
     #[test]
     fn rotates_and_transforms_sdf() {
-        let sdf = SDFElement {
-            primitive: SDFPrimitive::Box(Vec3::new(1., 2., 1.)),
-            translation: Vec3::X,
-            rotation: Quat::from_euler(EulerRot::XYZ, 0., 0., 90. * PI / 180.),
-            ..default()
-        };
+        let sdf = SDFElement::default()
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., 0., 90. * PI / 180.))
+            .with_primitive(SDFPrimitive::Box(Vec3::new(1., 2., 1.)))
+            .with_translation(Vec3::X);
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
         let surface = sdf.value_at_point(&(Vec3::Y));
@@ -129,10 +158,7 @@ mod tests {
 
     #[test]
     fn scales_a_sdf() {
-        let sdf = SDFElement {
-            scale: 2.,
-            ..default()
-        };
+        let sdf = SDFElement::default().with_scale(2.);
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
         let surface = sdf.value_at_point(&(Vec3::X * 2.));
@@ -145,13 +171,11 @@ mod tests {
 
     #[test]
     fn scales_transforms_and_rotates_a_sdf() {
-        let sdf = SDFElement {
-            primitive: SDFPrimitive::Box(Vec3::new(0.5, 1., 0.5)),
-            translation: Vec3::X,
-            rotation: Quat::from_euler(EulerRot::XYZ, 0., 0., 90. * PI / 180.),
-            scale: 2.,
-            ..default()
-        };
+        let sdf = SDFElement::default()
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., 0., 90. * PI / 180.))
+            .with_primitive(SDFPrimitive::Box(Vec3::new(0.5, 1., 0.5)))
+            .with_translation(Vec3::X)
+            .with_scale(2.);
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
         let surface = sdf.value_at_point(&(Vec3::Y));
@@ -164,14 +188,8 @@ mod tests {
 
     #[test]
     fn union_of_sdfs() {
-        let sdf_a = SDFElement {
-            translation: Vec3::X,
-            ..default()
-        };
-        let sdf_b = SDFElement {
-            translation: -1. * Vec3::X,
-            ..default()
-        };
+        let sdf_a = SDFElement::default().with_translation(Vec3::X);
+        let sdf_b = SDFElement::default().with_translation(-1. * Vec3::X);
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
         };

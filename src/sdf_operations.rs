@@ -1,6 +1,5 @@
 //! Describes the available SDF operations
 
-
 /// The operations combining SDFs
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SDFOperators {
