@@ -31,6 +31,11 @@ impl Default for SDFElement {
 }
 
 impl SDFElement {
+    /// Create a new element - short for the default
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Make `SDFElement` with a primitive
     pub fn with_primitive(mut self, primitive: SDFPrimitive) -> Self {
         self.primitive = primitive;
