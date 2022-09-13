@@ -93,11 +93,14 @@ impl SDFElement {
     /// Get the bounds of the element, potentially given a previous element
     pub fn get_bounds(&self, previous: &Option<(Vec3, Vec3)>) -> (Vec3, Vec3) {
         let bounds = self.primitive.get_bounds();
-        let bounds = (self.transform.transform_point3(bounds.0), self.transform.transform_point3(bounds.1));
+        let bounds = (
+            self.transform.transform_point3(bounds.0),
+            self.transform.transform_point3(bounds.1),
+        );
         let mut bounds = (bounds.0.min(bounds.1), bounds.0.max(bounds.1));
 
         if let Some(previous) = previous {
-            bounds = self.operation.get_bounds(&previous, &bounds);
+            bounds = self.operation.get_bounds(previous, &bounds);
         }
         bounds
     }
@@ -120,9 +123,10 @@ impl SDFObject {
 
     /// Calculate SDF Object bounds
     pub fn get_bounds(&self) -> (Vec3, Vec3) {
-        self.elements.iter().fold(None, |value, element| {
-            Some(element.get_bounds(&value))
-        }).unwrap_or((Vec3::ZERO, Vec3::ZERO))
+        self.elements
+            .iter()
+            .fold(None, |value, element| Some(element.get_bounds(&value)))
+            .unwrap_or((Vec3::ZERO, Vec3::ZERO))
     }
 }
 
@@ -297,10 +301,11 @@ mod tests {
         assert_float_absolute_eq!(bounds.1.z, 1.);
     }
 
-
     #[test]
     fn rotates_bounds() {
-        let sdf = SDFElement::default().with_primitive(SDFPrimitive::Box(Vec3::new(1., 2., 0.5))).with_rotation(Quat::from_euler(EulerRot::XYZ, 0.,  90. * PI / 180., 0.));
+        let sdf = SDFElement::default()
+            .with_primitive(SDFPrimitive::Box(Vec3::new(1., 2., 0.5)))
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., 90. * PI / 180., 0.));
 
         let bounds = sdf.get_bounds(&None);
 

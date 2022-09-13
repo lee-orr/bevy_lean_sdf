@@ -103,9 +103,12 @@ mod test {
         assert_float_absolute_eq!(result, 2.);
     }
 
-#[test]
-pub fn union_bounds_encompass_both_bounds() {
-        let bounds = SDFOperators::Union.get_bounds(&(Vec3::new(-1., -2., -0.5),Vec3::new(1., 0., 0.5)), &(Vec3::new(0., -1., -1.5),Vec3::new(1.5, 2., 0.5)));
+    #[test]
+    pub fn union_bounds_encompass_both_bounds() {
+        let bounds = SDFOperators::Union.get_bounds(
+            &(Vec3::new(-1., -2., -0.5), Vec3::new(1., 0., 0.5)),
+            &(Vec3::new(0., -1., -1.5), Vec3::new(1.5, 2., 0.5)),
+        );
 
         assert_float_absolute_eq!(bounds.0.x, -1.);
         assert_float_absolute_eq!(bounds.0.y, -2.);
@@ -115,10 +118,12 @@ pub fn union_bounds_encompass_both_bounds() {
         assert_float_absolute_eq!(bounds.1.z, 0.5);
     }
 
-
-#[test]
-pub fn subtracted_bounds_are_subtractee_bounds() {
-        let bounds = SDFOperators::Subtraction.get_bounds(&(Vec3::new(-1., -2., -0.5),Vec3::new(1., 0., 0.5)), &(Vec3::new(0., -1., -1.5),Vec3::new(1.5, 2., 0.5)));
+    #[test]
+    pub fn subtracted_bounds_are_subtractee_bounds() {
+        let bounds = SDFOperators::Subtraction.get_bounds(
+            &(Vec3::new(-1., -2., -0.5), Vec3::new(1., 0., 0.5)),
+            &(Vec3::new(0., -1., -1.5), Vec3::new(1.5, 2., 0.5)),
+        );
 
         assert_float_absolute_eq!(bounds.0.x, -1.);
         assert_float_absolute_eq!(bounds.0.y, -2.);
@@ -128,10 +133,12 @@ pub fn subtracted_bounds_are_subtractee_bounds() {
         assert_float_absolute_eq!(bounds.1.z, 0.5);
     }
 
-
-#[test]
-pub fn intersection_bounds_are_intersection_of_bounds() {
-        let bounds = SDFOperators::Intersection.get_bounds(&(Vec3::new(-1., -2., -0.5),Vec3::new(1., 0., 0.5)), &(Vec3::new(0., -1., -1.5),Vec3::new(1.5, 2., 0.5)));
+    #[test]
+    pub fn intersection_bounds_are_intersection_of_bounds() {
+        let bounds = SDFOperators::Intersection.get_bounds(
+            &(Vec3::new(-1., -2., -0.5), Vec3::new(1., 0., 0.5)),
+            &(Vec3::new(0., -1., -1.5), Vec3::new(1.5, 2., 0.5)),
+        );
 
         assert_float_absolute_eq!(bounds.0.x, 0.);
         assert_float_absolute_eq!(bounds.0.y, -1.);
