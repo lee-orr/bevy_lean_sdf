@@ -12,14 +12,8 @@ pub mod sdf_operations;
 pub mod sdf_primitives;
 
 /// A plugin
-pub struct HelloWorldPlugin;
+pub struct SDFPlugin;
 
-impl Plugin for HelloWorldPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_startup_system(hello_world);
-    }
-}
-
-fn hello_world() {
-    println!("Hello, World!");
+impl Plugin for SDFPlugin {
+    fn build(&self, _app: &mut App) {}
 }

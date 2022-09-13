@@ -113,7 +113,21 @@ pub struct SDFObject {
     pub elements: Vec<SDFElement>,
 }
 
+impl Default for SDFObject {
+    fn default() -> Self {
+        Self {
+            elements: Vec::new(),
+        }
+    }
+}
+
 impl SDFObject {
+    /// Add Element
+    pub fn with_element(mut self, element: SDFElement) -> Self {
+        self.elements.push(element);
+        self
+    }
+
     /// Calculate the value of the SDF Object at a given point
     pub fn value_at_point(&self, point: &Vec3) -> f32 {
         self.elements.iter().fold(f32::INFINITY, |value, element| {
@@ -150,7 +164,6 @@ impl SDFObject {
                 }) {
                     let point = Vec3::new(x, y, z);
                     let sdf = self.value_at_point(&point);
-                    println!("Testing Point {} = {}", &point, &sdf);
                     if sdf <= half_box_size + f32::EPSILON && sdf >= -half_box_size - f32::EPSILON {
                         boxes.push(point);
                     }

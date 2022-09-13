@@ -30,7 +30,7 @@ bevy = { version = "0.8", default-features = false}
 [dev-dependencies]
 criterion = "0.3"
 # We can use a different feature set of Bevy for our library vs our examples and tests
-bevy = { version = "0.8", default-features = false, features = ["dynamic"]}
+bevy = { version = "0.8", default-features = true, features = ["dynamic"]}
 assert_float_eq = "1.1.3"
 
 
