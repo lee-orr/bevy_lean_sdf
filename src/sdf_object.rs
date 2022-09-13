@@ -128,6 +128,37 @@ impl SDFObject {
             .fold(None, |value, element| Some(element.get_bounds(&value)))
             .unwrap_or((Vec3::ZERO, Vec3::ZERO))
     }
+
+    /// Get the locations of boxes designed to cover the surface at a given size
+    pub fn generate_boxes(&self, resolution: i32) -> (f32, Vec<Vec3>) {
+        let bounds = self.get_bounds();
+        let size = (bounds.1 - bounds.0).max_element();
+        let box_size = size / (resolution as f32);
+        let half_box_size = box_size / 2.;
+        let mut boxes: Vec<Vec3> = Vec::new();
+        for x in (0..resolution).map(|x| {
+            let x = x as f32;
+            bounds.0.x + x * box_size + half_box_size
+        }) {
+            for y in (0..resolution).map(|y| {
+                let y = y as f32;
+                bounds.0.y + y * box_size + half_box_size
+            }) {
+                for z in (0..resolution).map(|z| {
+                    let z = z as f32;
+                    bounds.0.z + z * box_size + half_box_size
+                }) {
+                    let point = Vec3::new(x, y, z);
+                    let sdf = self.value_at_point(&point);
+                    println!("Testing Point {} = {}", &point, &sdf);
+                    if sdf <= half_box_size + f32::EPSILON && sdf >= -half_box_size - f32::EPSILON {
+                        boxes.push(point);
+                    }
+                }
+            }
+        }
+        (box_size, boxes)
+    }
 }
 
 #[cfg(test)]
@@ -347,5 +378,17 @@ mod tests {
         assert_float_absolute_eq!(bounds.1.x, 2.);
         assert_float_absolute_eq!(bounds.1.y, 1.);
         assert_float_absolute_eq!(bounds.1.z, 1.);
+    }
+
+    #[test]
+    fn generate_boxes_on_surface() {
+        let sdf_a = SDFElement::default().with_primitive(SDFPrimitive::Box(Vec3::ONE));
+        let sdf = SDFObject {
+            elements: vec![sdf_a],
+        };
+
+        let result = sdf.generate_boxes(3);
+        assert_float_absolute_eq!(result.0, 2. / 3.);
+        assert_eq!(result.1.len(), 9 * 2 + 8);
     }
 }
