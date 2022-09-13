@@ -28,16 +28,17 @@ fn setup(
                 .with_translation(Vec3::Z * 2.)
                 .with_operation(SDFOperators::Subtraction),
         );
-
-    let (size, boxes) = sdf.generate_boxes(64);
-    let scale = Vec3::ONE * size;
-    for b in boxes.iter() {
-        commands.spawn_bundle(PbrBundle {
-            mesh: mesh.clone(),
-            material: material.clone(),
-            transform: Transform::from_xyz(b.x, b.y, b.z).with_scale(scale),
-            ..default()
-        });
+    let boxes = sdf.generate_lod_boxes(8, 6, 0.1);
+    if let Some((size, boxes)) = boxes.last() {
+        let scale = Vec3::ONE * *size;
+        for b in boxes.iter().flatten() {
+            commands.spawn_bundle(PbrBundle {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                transform: Transform::from_xyz(b.x, b.y, b.z).with_scale(scale),
+                ..default()
+            });
+        }
     }
 
     // light

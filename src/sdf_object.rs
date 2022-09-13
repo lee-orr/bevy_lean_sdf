@@ -144,8 +144,7 @@ impl SDFObject {
     }
 
     /// Get the locations of boxes designed to cover the surface at a given size
-    pub fn generate_boxes(&self, resolution: i32) -> (f32, Vec<Vec3>) {
-        let bounds = self.get_bounds();
+    pub fn generate_boxes(&self, resolution: usize, bounds: &(Vec3, Vec3)) -> (f32, Vec<Vec3>) {
         let size = (bounds.1 - bounds.0).max_element();
         let box_size = size / (resolution as f32);
         let half_box_size = box_size / 2.;
@@ -164,13 +163,44 @@ impl SDFObject {
                 }) {
                     let point = Vec3::new(x, y, z);
                     let sdf = self.value_at_point(&point);
-                    if sdf <= half_box_size + f32::EPSILON && sdf >= -half_box_size - f32::EPSILON {
+                    if sdf <= box_size && sdf >= -box_size  {
                         boxes.push(point);
                     }
                 }
             }
         }
         (box_size, boxes)
+    }
+
+    /// Get locations of boxes at all LODs
+    pub fn generate_lod_boxes(&self, resolution: usize, max_lods: usize, min_box_size: f32) -> Vec<(f32, Vec<Vec<Vec3>>)> {
+        let bounds = self.get_bounds();
+        let mut lods : Vec<(f32, Vec<Vec<Vec3>>)> = Vec::new();
+
+        loop {
+            if lods.len() >= max_lods {
+                break;
+            }
+            if let Some((last_lod_size, last_lod_vecs)) = lods.last() {
+                if *last_lod_size < min_box_size {
+                    break;
+                }
+                let lod_half_size = last_lod_size / 2.;
+                let mut lod = Vec::<Vec<Vec3>>::new();
+                let mut new_size = lod_half_size / (resolution as f32);
+                for current in last_lod_vecs.iter().flatten() {
+                    let result = self.generate_boxes(resolution, &(*current - lod_half_size, *current + lod_half_size));
+                    new_size = result.0;
+                    lod.push(result.1);
+                }
+                lods.push((new_size, lod));
+            } else {
+                let result = self.generate_boxes(resolution, &bounds);
+                lods.push((result.0, vec![result.1]));
+            }
+        }
+
+        lods
     }
 }
 
@@ -400,8 +430,24 @@ mod tests {
             elements: vec![sdf_a],
         };
 
-        let result = sdf.generate_boxes(3);
+        let result = sdf.generate_boxes(3, &sdf.get_bounds());
         assert_float_absolute_eq!(result.0, 2. / 3.);
         assert_eq!(result.1.len(), 9 * 2 + 8);
+    }
+
+    #[test]
+    fn generate_boxes_on_surface_with_lod() {
+        let sdf_a = SDFElement::default().with_primitive(SDFPrimitive::Box(Vec3::ONE));
+        let sdf = SDFObject {
+            elements: vec![sdf_a],
+        };
+
+        let result = sdf.generate_lod_boxes(3, 2, 0.1);
+        assert_eq!(result.len(), 2);
+        assert_float_absolute_eq!(result[0].0, 2. / 3.);
+        assert_eq!(result[0].1[0].len(), 9 * 2 + 8);
+        assert_float_absolute_eq!(result[1].0, 2. / 9.);
+        assert_eq!(result[1].1.len(), 9 * 2 + 8);
+        assert_eq!(result[1].1[0].len(), 19);
     }
 }
