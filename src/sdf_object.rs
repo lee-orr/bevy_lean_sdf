@@ -89,6 +89,18 @@ impl SDFElement {
         let value = self.value_at_point(point);
         self.operation.value(&previous, &value)
     }
+
+    /// Get the bounds of the element, potentially given a previous element
+    pub fn get_bounds(&self, previous: &Option<(Vec3, Vec3)>) -> (Vec3, Vec3) {
+        let bounds = self.primitive.get_bounds();
+        let bounds = (self.transform.transform_point3(bounds.0), self.transform.transform_point3(bounds.1));
+        let mut bounds = (bounds.0.min(bounds.1), bounds.0.max(bounds.1));
+
+        if let Some(previous) = previous {
+            bounds = self.operation.get_bounds(&previous, &bounds);
+        }
+        bounds
+    }
 }
 
 /// The root SDF object
@@ -104,6 +116,13 @@ impl SDFObject {
         self.elements.iter().fold(f32::INFINITY, |value, element| {
             element.process_object_at_point(point, value)
         })
+    }
+
+    /// Calculate SDF Object bounds
+    pub fn get_bounds(&self) -> (Vec3, Vec3) {
+        self.elements.iter().fold(None, |value, element| {
+            Some(element.get_bounds(&value))
+        }).unwrap_or((Vec3::ZERO, Vec3::ZERO))
     }
 }
 
@@ -262,5 +281,66 @@ mod tests {
         assert_float_absolute_eq!(interior, -1.);
         assert_float_absolute_eq!(surface, 0.);
         assert_float_absolute_eq!(outside, 0.5);
+    }
+
+    #[test]
+    fn translates_bounds() {
+        let sdf = SDFElement::default().with_translation(Vec3::X);
+
+        let bounds = sdf.get_bounds(&None);
+
+        assert_float_absolute_eq!(bounds.0.x, 0.);
+        assert_float_absolute_eq!(bounds.0.y, -1.);
+        assert_float_absolute_eq!(bounds.0.z, -1.);
+        assert_float_absolute_eq!(bounds.1.x, 2.);
+        assert_float_absolute_eq!(bounds.1.y, 1.);
+        assert_float_absolute_eq!(bounds.1.z, 1.);
+    }
+
+
+    #[test]
+    fn rotates_bounds() {
+        let sdf = SDFElement::default().with_primitive(SDFPrimitive::Box(Vec3::new(1., 2., 0.5))).with_rotation(Quat::from_euler(EulerRot::XYZ, 0.,  90. * PI / 180., 0.));
+
+        let bounds = sdf.get_bounds(&None);
+
+        assert_float_absolute_eq!(bounds.0.x, -0.5);
+        assert_float_absolute_eq!(bounds.0.y, -2.);
+        assert_float_absolute_eq!(bounds.0.z, -1.);
+        assert_float_absolute_eq!(bounds.1.x, 0.5);
+        assert_float_absolute_eq!(bounds.1.y, 2.);
+        assert_float_absolute_eq!(bounds.1.z, 1.);
+    }
+
+    #[test]
+    fn scales_bounds() {
+        let sdf = SDFElement::default().with_scale(2.);
+
+        let bounds = sdf.get_bounds(&None);
+
+        assert_float_absolute_eq!(bounds.0.x, -2.);
+        assert_float_absolute_eq!(bounds.0.y, -2.);
+        assert_float_absolute_eq!(bounds.0.z, -2.);
+        assert_float_absolute_eq!(bounds.1.x, 2.);
+        assert_float_absolute_eq!(bounds.1.y, 2.);
+        assert_float_absolute_eq!(bounds.1.z, 2.);
+    }
+
+    #[test]
+    fn bounds_of_multiple_elements() {
+        let sdf_a = SDFElement::default().with_translation(Vec3::X);
+        let sdf_b = SDFElement::default().with_translation(-1. * Vec3::X);
+        let sdf = SDFObject {
+            elements: vec![sdf_a, sdf_b],
+        };
+
+        let bounds = sdf.get_bounds();
+
+        assert_float_absolute_eq!(bounds.0.x, -2.);
+        assert_float_absolute_eq!(bounds.0.y, -1.);
+        assert_float_absolute_eq!(bounds.0.z, -1.);
+        assert_float_absolute_eq!(bounds.1.x, 2.);
+        assert_float_absolute_eq!(bounds.1.y, 1.);
+        assert_float_absolute_eq!(bounds.1.z, 1.);
     }
 }
