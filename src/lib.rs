@@ -4,16 +4,21 @@
 #![doc = include_str!("../README.md")]
 
 use bevy::prelude::*;
+use sdf_instanced_shader::SDFInstancedShaderPlugin;
 
 pub mod utils;
 
 pub mod sdf_object;
 pub mod sdf_operations;
 pub mod sdf_primitives;
+pub mod sdf_instanced_shader;
 
 /// A plugin
 pub struct SDFPlugin;
 
 impl Plugin for SDFPlugin {
-    fn build(&self, _app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        app
+            .add_plugin(SDFInstancedShaderPlugin);
+    }
 }

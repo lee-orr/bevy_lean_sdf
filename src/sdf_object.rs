@@ -172,6 +172,37 @@ impl SDFObject {
         (box_size, boxes)
     }
 
+    /// Generate the contents of a texture
+    pub fn generate_texture(&self, resolution: usize, bounds: &(Vec3, Vec3)) -> Vec<u8> {
+        let size = (bounds.1 - bounds.0).max_element();
+        let box_size = size / (resolution as f32);
+        let half_box_size = box_size / 2.;
+        let mut boxes: Vec<u8> = Vec::new();
+        for x in (0..resolution).map(|x| {
+            let x = x as f32;
+            bounds.0.x + x * box_size + half_box_size
+        }) {
+            for y in (0..resolution).map(|y| {
+                let y = y as f32;
+                bounds.0.y + y * box_size + half_box_size
+            }) {
+                for z in (0..resolution).map(|z| {
+                    let z = z as f32;
+                    bounds.0.z + z * box_size + half_box_size
+                }) {
+                    let point = Vec3::new(x, y, z);
+                    let sdf = self.value_at_point(&point);
+                    if sdf <= box_size && sdf >= -box_size  {
+                        boxes.push(1);
+                    } else {
+                        boxes.push(0);
+                    }
+                }
+            }
+        }
+        boxes
+    }
+
     /// Get locations of boxes at all LODs
     pub fn generate_lod_boxes(&self, resolution: usize, max_lods: usize, min_box_size: f32) -> Vec<(f32, Vec<Vec<Vec3>>)> {
         let bounds = self.get_bounds();
