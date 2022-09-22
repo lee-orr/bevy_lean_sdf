@@ -21,6 +21,7 @@ members = ["./", "tools/ci"]
 [dependencies]
 bevy = { version = "0.8", default-features = false}
 bytemuck = "*"
+bitflags = "*"
 
 [patch.crates-io]
 # We can override the bevy version with remote or local versions

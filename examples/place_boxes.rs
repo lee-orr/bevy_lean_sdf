@@ -1,10 +1,10 @@
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    render::{view::NoFrustumCulling, renderer::RenderQueue},
+    render::{view::NoFrustumCulling},
 };
 use template_lib::{
-    sdf_instanced_shader::{SDFInstanceAsset, SDFInstanceData, SDFInstancedShaderPlugin},
+    sdf_shader::{SDFShaderPlugin},
     sdf_object::{SDFElement, SDFObject},
     sdf_operations::SDFOperators,
     sdf_primitives::SDFPrimitive,
@@ -13,7 +13,7 @@ use template_lib::{
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugin(SDFInstancedShaderPlugin)
+        .add_plugin(SDFShaderPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(LogDiagnosticsPlugin::default())
         .add_startup_system(setup)
@@ -25,9 +25,14 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    queue: Res<RenderQueue>
+    mut sdfs: ResMut<Assets<SDFObject>>
 ) {
-    let sdf = SDFObject::default()
+        let mesh = meshes.add(Mesh::from(shape::Cube { size: 0.1 }));
+        let mat = materials.add(StandardMaterial::from(Color::GOLD));
+        let sdf = (SDFObject {
+            mesh_handle: Some(mesh.clone()),
+            ..default()
+        })
         .with_element(SDFElement::default().with_primitive(SDFPrimitive::Sphere(2.)))
         .with_element(
             SDFElement::default()
@@ -35,37 +40,21 @@ fn setup(
                 .with_translation(Vec3::Z * 2.)
                 .with_operation(SDFOperators::Subtraction),
         );
-    let boxes = sdf.generate_lod_boxes(8, 4, 0.5);
-    if let Some((size, boxes)) = boxes.last() {
-        let mesh = meshes.add(Mesh::from(shape::Cube { size: *size }));
-        let half_size = Vec3::ONE * *size / 2.;
+        
+        let sdf_mesh = sdf.generate_box_mesh(8, 2, 0.1);
+
+        let _ = meshes.set(mesh.clone(), sdf_mesh);
+        let sdf = sdfs.add(sdf);
         commands.spawn_bundle((
-            mesh.clone(),
+                mesh.clone(),
+                mat.clone(),
+            sdf.clone(),
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
             ComputedVisibility::default(),
-            NoFrustumCulling,
-            SDFInstanceAsset(
-                boxes
-                    .iter()
-                    .flatten()
-                .filter_map(|b| {
-                    let texture = sdf.generate_texture(8, &(*b - half_size, *b + half_size));
-                            Some(SDFInstanceData { position: *b })
-                    })
-                    .collect(),
-            ),
+
         ));
-        //        for b in boxes.iter().flatten() {
-        //            commands.spawn_bundle(PbrBundle {
-        //                mesh: mesh.clone(),
-        //                material: material.clone(),
-        //                transform: Transform::from_xyz(b.x, b.y, b.z),
-        //                ..default()
-        //            });
-        //        }
-    }
 
     // light
     commands.spawn_bundle(PointLightBundle {
