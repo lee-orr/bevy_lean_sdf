@@ -3,8 +3,7 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     render::{
-        extract_component::ExtractComponentPlugin,
-        render_asset::{RenderAssetPlugin},
+        extract_component::ExtractComponentPlugin, render_asset::RenderAssetPlugin,
         render_resource::*,
     },
 };

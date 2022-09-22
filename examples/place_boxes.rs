@@ -23,13 +23,16 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut sdfs: ResMut<Assets<SDFObject>>,
 ) {
     let mesh = meshes.add(Mesh::from(shape::Cube { size: 0.1 }));
     let mat = materials.add(StandardMaterial::from(Color::GOLD));
+    let image = images.add(Image::default());
     let sdf = (SDFObject {
         mesh_handle: Some(mesh.clone()),
+        image_handle: Some(image.clone()),
         ..default()
     })
     .with_element(SDFElement::default().with_primitive(SDFPrimitive::Sphere(2.)))
@@ -40,9 +43,10 @@ fn setup(
             .with_operation(SDFOperators::Subtraction),
     );
 
-    let sdf_mesh = sdf.generate_box_mesh(8, 2, 0.1);
+    let (sdf_mesh, sdf_image) = sdf.generate_mesh_and_texture(8, 2, 0.1);
 
     let _ = meshes.set(mesh.clone(), sdf_mesh);
+    let _ = images.set(image, sdf_image);
     let sdf = sdfs.add(sdf);
     commands.spawn_bundle((
         mesh,

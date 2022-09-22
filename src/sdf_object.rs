@@ -11,6 +11,7 @@ use bevy::{
     render::{
         mesh::{Indices, PrimitiveTopology},
         render_asset::{PrepareAssetError, RenderAsset},
+        render_resource::{Extent3d, TextureDimension, TextureFormat},
         renderer::RenderDevice,
     },
 };
@@ -127,6 +128,8 @@ pub struct SDFObject {
     pub elements: Vec<SDFElement>,
     /// The mesh handle for the current SDF object
     pub mesh_handle: Option<Handle<Mesh>>,
+    /// The mesh handle for the current SDF object
+    pub image_handle: Option<Handle<Image>>,
 }
 
 impl SDFObject {
@@ -255,13 +258,65 @@ impl SDFObject {
         lods
     }
 
+    fn generate_texture_data_at_points(
+        &self,
+        boxes: &Vec<&Vec3>,
+        size: &f32,
+        resolution: usize,
+    ) -> (u32, Vec<u8>) {
+        let box_size = *size;
+        let half_size = box_size / 2.;
+        let dimensons = (boxes.len() as f32).cbrt() as usize + 1;
+        let full_dimensions = dimensons * resolution;
+        let capacity = full_dimensions * full_dimensions * full_dimensions;
+        let mut contents = (0..capacity).map(|_| 0u8).collect::<Vec<_>>();
+
+        for (index, b) in boxes.iter().enumerate() {
+            let bounds = (**b - half_size, **b + half_size);
+            let chunk_id = (
+                index % dimensons,
+                (index / dimensons) % dimensons,
+                index / (dimensons * dimensons),
+            );
+            let chunk_start_pixel = (
+                chunk_id.0 * resolution,
+                chunk_id.1 * resolution,
+                chunk_id.2 * resolution,
+            );
+            for (x, ix) in (0..resolution).map(|x| {
+                let ix = chunk_start_pixel.0 + x;
+                let x = x as f32;
+                (bounds.0.x + x * box_size + half_size, ix)
+            }) {
+                for (y, iy) in (0..resolution).map(|y| {
+                    let iy = chunk_start_pixel.1 + y;
+                    let y = y as f32;
+                    (bounds.0.y + y * box_size + half_size, iy)
+                }) {
+                    for (z, iz) in (0..resolution).map(|z| {
+                        let iz = chunk_start_pixel.2 + z;
+                        let z = z as f32;
+                        (bounds.0.z + z * box_size + half_size, iz)
+                    }) {
+                        let point = Vec3::new(x, y, z);
+                        let sdf = self.value_at_point(&point);
+                        let index = ix + iy * dimensons + iz * dimensons * dimensons;
+                        contents[index] = (sdf * 8. + 1.) as u8;
+                    }
+                }
+            }
+        }
+
+        (full_dimensions as u32, contents)
+    }
+
     /// Generate box mesh
-    pub fn generate_box_mesh(
+    pub fn generate_mesh_and_texture(
         &self,
         resolution: usize,
         target_lod: usize,
         min_box_size: f32,
-    ) -> Mesh {
+    ) -> (Mesh, Image) {
         let lod_boxes = self.generate_lod_boxes(resolution, target_lod, min_box_size);
 
         if let Some((size, boxes)) = lod_boxes.last() {
@@ -272,8 +327,10 @@ impl SDFObject {
                 Vec::<u32>::new(),
             );
 
+            let boxes: Vec<_> = boxes.iter().flatten().collect();
+
             let mut starting_index = 0u32;
-            for b in boxes.iter().flatten() {
+            for b in boxes.iter() {
                 let (next_index, mut position, mut normal, mut uv, mut local_indices) =
                     build_box(b, *size, starting_index);
 
@@ -290,9 +347,24 @@ impl SDFObject {
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
             mesh.set_indices(Some(Indices::U32(indices)));
-            mesh
+
+            let (dimension_size, texture_data) =
+                self.generate_texture_data_at_points(&boxes, size, resolution);
+
+            let image = Image::new(
+                Extent3d {
+                    width: dimension_size,
+                    height: dimension_size,
+                    depth_or_array_layers: dimension_size,
+                },
+                TextureDimension::D3,
+                texture_data,
+                TextureFormat::R8Uint,
+            );
+
+            (mesh, image)
         } else {
-            Mesh::from(shape::Cube::default())
+            (Mesh::from(shape::Cube::default()), Image::default())
         }
     }
 }
@@ -489,6 +561,7 @@ mod tests {
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
+            image_handle: None,
         };
 
         let interior_a = sdf.value_at_point(&Vec3::X);
@@ -518,6 +591,7 @@ mod tests {
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
+            image_handle: None,
         };
 
         let center = sdf.value_at_point(&Vec3::ZERO);
@@ -547,6 +621,7 @@ mod tests {
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
+            image_handle: None,
         };
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
@@ -609,6 +684,7 @@ mod tests {
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
+            image_handle: None,
         };
 
         let bounds = sdf.get_bounds();
@@ -627,6 +703,7 @@ mod tests {
         let sdf = SDFObject {
             elements: vec![sdf_a],
             mesh_handle: None,
+            image_handle: None,
         };
 
         let result = sdf.generate_boxes(3, &sdf.get_bounds());
@@ -640,6 +717,7 @@ mod tests {
         let sdf = SDFObject {
             elements: vec![sdf_a],
             mesh_handle: None,
+            image_handle: None,
         };
 
         let result = sdf.generate_lod_boxes(3, 2, 0.1);
