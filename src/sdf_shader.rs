@@ -1,30 +1,15 @@
 //! Pipeline for instanced SDF shader
 use bevy::{
-    asset::Asset,
-    core_pipeline::core_3d::Transparent3d,
-    ecs::system::{lifetimeless::*, SystemParamItem},
-    pbr::{
-        MaterialPipeline, MaterialPipelineKey, MeshPipeline, MeshPipelineKey, MeshUniform,
-        SetMeshBindGroup, SetMeshViewBindGroup,
-    },
     prelude::*,
     reflect::TypeUuid,
     render::{
         extract_component::ExtractComponentPlugin,
-        mesh::{GpuBufferInfo, MeshVertexBufferLayout},
-        render_asset::{RenderAssetPlugin, RenderAssets},
-        render_phase::{
-            AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
-            SetItemPipeline, TrackedRenderPass,
-        },
+        render_asset::{RenderAssetPlugin},
         render_resource::*,
-        renderer::RenderDevice,
-        view::ExtractedView,
-        RenderApp, RenderStage,
     },
 };
+
 use bytemuck::{Pod, Zeroable};
-use bitflags::bitflags;
 
 use crate::sdf_object::SDFObject;
 
@@ -49,7 +34,6 @@ pub struct SDFRenderAsset {
 }
 
 impl Material for SDFRenderAsset {
-
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Mask(0.5)
     }

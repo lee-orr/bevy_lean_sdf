@@ -18,7 +18,6 @@ pub struct SDFPlugin;
 
 impl Plugin for SDFPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_plugin(SDFShaderPlugin);
+        app.add_plugin(SDFShaderPlugin);
     }
 }

@@ -1,13 +1,12 @@
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    render::{view::NoFrustumCulling},
 };
 use template_lib::{
-    sdf_shader::{SDFShaderPlugin},
     sdf_object::{SDFElement, SDFObject},
     sdf_operations::SDFOperators,
     sdf_primitives::SDFPrimitive,
+    sdf_shader::SDFShaderPlugin,
 };
 
 fn main() {
@@ -25,36 +24,35 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut sdfs: ResMut<Assets<SDFObject>>
+    mut sdfs: ResMut<Assets<SDFObject>>,
 ) {
-        let mesh = meshes.add(Mesh::from(shape::Cube { size: 0.1 }));
-        let mat = materials.add(StandardMaterial::from(Color::GOLD));
-        let sdf = (SDFObject {
-            mesh_handle: Some(mesh.clone()),
-            ..default()
-        })
-        .with_element(SDFElement::default().with_primitive(SDFPrimitive::Sphere(2.)))
-        .with_element(
-            SDFElement::default()
-                .with_primitive(SDFPrimitive::Box(Vec3::ONE))
-                .with_translation(Vec3::Z * 2.)
-                .with_operation(SDFOperators::Subtraction),
-        );
-        
-        let sdf_mesh = sdf.generate_box_mesh(8, 2, 0.1);
+    let mesh = meshes.add(Mesh::from(shape::Cube { size: 0.1 }));
+    let mat = materials.add(StandardMaterial::from(Color::GOLD));
+    let sdf = (SDFObject {
+        mesh_handle: Some(mesh.clone()),
+        ..default()
+    })
+    .with_element(SDFElement::default().with_primitive(SDFPrimitive::Sphere(2.)))
+    .with_element(
+        SDFElement::default()
+            .with_primitive(SDFPrimitive::Box(Vec3::ONE))
+            .with_translation(Vec3::Z * 2.)
+            .with_operation(SDFOperators::Subtraction),
+    );
 
-        let _ = meshes.set(mesh.clone(), sdf_mesh);
-        let sdf = sdfs.add(sdf);
-        commands.spawn_bundle((
-                mesh.clone(),
-                mat.clone(),
-            sdf.clone(),
-            Transform::default(),
-            GlobalTransform::default(),
-            Visibility::default(),
-            ComputedVisibility::default(),
+    let sdf_mesh = sdf.generate_box_mesh(8, 2, 0.1);
 
-        ));
+    let _ = meshes.set(mesh.clone(), sdf_mesh);
+    let sdf = sdfs.add(sdf);
+    commands.spawn_bundle((
+        mesh,
+        mat,
+        sdf,
+        Transform::default(),
+        GlobalTransform::default(),
+        Visibility::default(),
+        ComputedVisibility::default(),
+    ));
 
     // light
     commands.spawn_bundle(PointLightBundle {

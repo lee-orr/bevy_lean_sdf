@@ -120,22 +120,13 @@ impl SDFElement {
 }
 
 /// The root SDF object
-#[derive(Debug, Clone, TypeUuid)]
+#[derive(Debug, Clone, TypeUuid, Default)]
 #[uuid = "3e9f6f3f-730c-46d1-8e12-4715f4c6f861"]
 pub struct SDFObject {
     /// A list of all the elements in the SDF
     pub elements: Vec<SDFElement>,
     /// The mesh handle for the current SDF object
     pub mesh_handle: Option<Handle<Mesh>>,
-}
-
-impl Default for SDFObject {
-    fn default() -> Self {
-        Self {
-            elements: Vec::new(),
-            mesh_handle: None,
-        }
-    }
 }
 
 impl SDFObject {
@@ -231,7 +222,11 @@ impl SDFObject {
         let mut lods: Vec<(f32, Vec<Vec<Vec3>>)> = Vec::new();
 
         loop {
-            bevy::log::info!("Getting box data for LOD {}, max is {}", lods.len(), &max_lods);
+            bevy::log::info!(
+                "Getting box data for LOD {}, max is {}",
+                lods.len(),
+                &max_lods
+            );
             if lods.len() >= max_lods {
                 break;
             }
@@ -279,7 +274,8 @@ impl SDFObject {
 
             let mut starting_index = 0u32;
             for b in boxes.iter().flatten() {
-                let (next_index, mut position, mut normal, mut uv, mut local_indices) = build_box(b, *size, starting_index);
+                let (next_index, mut position, mut normal, mut uv, mut local_indices) =
+                    build_box(b, *size, starting_index);
 
                 positions.append(&mut position);
                 normals.append(&mut normal);
@@ -307,58 +303,61 @@ fn build_box(
     start_index: u32,
 ) -> (u32, Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32; 2]>, Vec<u32>) {
     bevy::log::info!("Building box @ {} {}", position, &size);
-    let half_size = size/2.;
+    let half_size = size / 2.;
 
     let min = *position - half_size;
     let max = *position + half_size;
 
     let vertices = &[
-            // Top
-            ([min.x, min.y, max.z], [0., 0., 1.0], [0., 0.]),
-            ([max.x, min.y, max.z], [0., 0., 1.0], [1.0, 0.]),
-            ([max.x, max.y, max.z], [0., 0., 1.0], [1.0, 1.0]),
-            ([min.x, max.y, max.z], [0., 0., 1.0], [0., 1.0]),
-            // Bottom
-            ([min.x, max.y, min.z], [0., 0., -1.0], [1.0, 0.]),
-            ([max.x, max.y, min.z], [0., 0., -1.0], [0., 0.]),
-            ([max.x, min.y, min.z], [0., 0., -1.0], [0., 1.0]),
-            ([min.x, min.y, min.z], [0., 0., -1.0], [1.0, 1.0]),
-            // Right
-            ([max.x, min.y, min.z], [1.0, 0., 0.], [0., 0.]),
-            ([max.x, max.y, min.z], [1.0, 0., 0.], [1.0, 0.]),
-            ([max.x, max.y, max.z], [1.0, 0., 0.], [1.0, 1.0]),
-            ([max.x, min.y, max.z], [1.0, 0., 0.], [0., 1.0]),
-            // Left
-            ([min.x, min.y, max.z], [-1.0, 0., 0.], [1.0, 0.]),
-            ([min.x, max.y, max.z], [-1.0, 0., 0.], [0., 0.]),
-            ([min.x, max.y, min.z], [-1.0, 0., 0.], [0., 1.0]),
-            ([min.x, min.y, min.z], [-1.0, 0., 0.], [1.0, 1.0]),
-            // Front
-            ([max.x, max.y, min.z], [0., 1.0, 0.], [1.0, 0.]),
-            ([min.x, max.y, min.z], [0., 1.0, 0.], [0., 0.]),
-            ([min.x, max.y, max.z], [0., 1.0, 0.], [0., 1.0]),
-            ([max.x, max.y, max.z], [0., 1.0, 0.], [1.0, 1.0]),
-            // Back
-            ([max.x, min.y, max.z], [0., -1.0, 0.], [0., 0.]),
-            ([min.x, min.y, max.z], [0., -1.0, 0.], [1.0, 0.]),
-            ([min.x, min.y, min.z], [0., -1.0, 0.], [1.0, 1.0]),
-            ([max.x, min.y, min.z], [0., -1.0, 0.], [0., 1.0]),
-        ];
+        // Top
+        ([min.x, min.y, max.z], [0., 0., 1.0], [0., 0.]),
+        ([max.x, min.y, max.z], [0., 0., 1.0], [1.0, 0.]),
+        ([max.x, max.y, max.z], [0., 0., 1.0], [1.0, 1.0]),
+        ([min.x, max.y, max.z], [0., 0., 1.0], [0., 1.0]),
+        // Bottom
+        ([min.x, max.y, min.z], [0., 0., -1.0], [1.0, 0.]),
+        ([max.x, max.y, min.z], [0., 0., -1.0], [0., 0.]),
+        ([max.x, min.y, min.z], [0., 0., -1.0], [0., 1.0]),
+        ([min.x, min.y, min.z], [0., 0., -1.0], [1.0, 1.0]),
+        // Right
+        ([max.x, min.y, min.z], [1.0, 0., 0.], [0., 0.]),
+        ([max.x, max.y, min.z], [1.0, 0., 0.], [1.0, 0.]),
+        ([max.x, max.y, max.z], [1.0, 0., 0.], [1.0, 1.0]),
+        ([max.x, min.y, max.z], [1.0, 0., 0.], [0., 1.0]),
+        // Left
+        ([min.x, min.y, max.z], [-1.0, 0., 0.], [1.0, 0.]),
+        ([min.x, max.y, max.z], [-1.0, 0., 0.], [0., 0.]),
+        ([min.x, max.y, min.z], [-1.0, 0., 0.], [0., 1.0]),
+        ([min.x, min.y, min.z], [-1.0, 0., 0.], [1.0, 1.0]),
+        // Front
+        ([max.x, max.y, min.z], [0., 1.0, 0.], [1.0, 0.]),
+        ([min.x, max.y, min.z], [0., 1.0, 0.], [0., 0.]),
+        ([min.x, max.y, max.z], [0., 1.0, 0.], [0., 1.0]),
+        ([max.x, max.y, max.z], [0., 1.0, 0.], [1.0, 1.0]),
+        // Back
+        ([max.x, min.y, max.z], [0., -1.0, 0.], [0., 0.]),
+        ([min.x, min.y, max.z], [0., -1.0, 0.], [1.0, 0.]),
+        ([min.x, min.y, min.z], [0., -1.0, 0.], [1.0, 1.0]),
+        ([max.x, min.y, min.z], [0., -1.0, 0.], [0., 1.0]),
+    ];
 
-        let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
-        let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-        let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+    let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
+    let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
+    let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
 
-        let indices = [
-            0, 1, 2, 2, 3, 0, // top
-            4, 5, 6, 6, 7, 4, // bottom
-            8, 9, 10, 10, 11, 8, // right
-            12, 13, 14, 14, 15, 12, // left
-            16, 17, 18, 18, 19, 16, // front
-            20, 21, 22, 22, 23, 20, // back
-        ].iter().map(|v| v + start_index).collect();
-        let next_index = positions.len() as u32 + start_index;
-        (next_index, positions, normals, uvs, indices)
+    let indices = [
+        0, 1, 2, 2, 3, 0, // top
+        4, 5, 6, 6, 7, 4, // bottom
+        8, 9, 10, 10, 11, 8, // right
+        12, 13, 14, 14, 15, 12, // left
+        16, 17, 18, 18, 19, 16, // front
+        20, 21, 22, 22, 23, 20, // back
+    ]
+    .iter()
+    .map(|v| v + start_index)
+    .collect();
+    let next_index = positions.len() as u32 + start_index;
+    (next_index, positions, normals, uvs, indices)
 }
 
 impl RenderAsset for SDFObject {
@@ -374,7 +373,7 @@ impl RenderAsset for SDFObject {
 
     fn prepare_asset(
         sdf: Self::ExtractedAsset,
-        param: &mut bevy::ecs::system::SystemParamItem<Self::Param>,
+        _param: &mut bevy::ecs::system::SystemParamItem<Self::Param>,
     ) -> Result<
         Self::PreparedAsset,
         bevy::render::render_asset::PrepareAssetError<Self::ExtractedAsset>,
@@ -387,9 +386,9 @@ impl RenderAsset for SDFObject {
                 instance_data: boxes
                     .iter()
                     .flatten()
-                    .filter_map(|b| {
-                        let texture = sdf.generate_texture(8, &(*b - half_size, *b + half_size));
-                        Some(SDFInstanceData { position: *b })
+                    .map(|b| {
+                        let _texture = sdf.generate_texture(8, &(*b - half_size, *b + half_size));
+                        SDFInstanceData { position: *b }
                     })
                     .collect(),
             })
