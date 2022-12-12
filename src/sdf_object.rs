@@ -2,16 +2,16 @@
 use crate::{
     sdf_operations::SDFOperators,
     sdf_primitives::SDFPrimitive,
-    sdf_shader::{SDFShader},
+    sdf_shader::{SDFShader, ATTRIBUTE_UV_3D},
 };
 use bevy::{
     ecs::system::lifetimeless::SRes,
     prelude::*,
     reflect::TypeUuid,
     render::{
-        mesh::{Indices, PrimitiveTopology},
+        mesh::{Indices, PrimitiveTopology, MeshVertexAttribute},
         render_asset::{PrepareAssetError, RenderAsset},
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        render_resource::{Extent3d, TextureDimension, TextureFormat, VertexFormat},
         renderer::RenderDevice,
     },
 };
@@ -265,13 +265,17 @@ impl SDFObject {
         boxes: &Vec<&Vec3>,
         size: &f32,
         resolution: usize,
-    ) -> (u32, Vec<u8>) {
+    ) -> (u32, Vec<u8>, Vec<(Vec3, Vec3)>, f32) {
         let box_size = *size;
         let half_size = box_size / 2.;
         let dimensons = (boxes.len() as f32).cbrt() as usize + 1;
         let full_dimensions = dimensons * resolution;
         let capacity = full_dimensions * full_dimensions * full_dimensions;
         let mut contents = (0..capacity).map(|_| 0u8).collect::<Vec<_>>();
+
+        let mut updated_boxes = Vec::new();
+
+        let uv_box_size = resolution as f32 / full_dimensions as f32;
 
         for (index, b) in boxes.iter().enumerate() {
             let bounds = (**b - half_size, **b + half_size);
@@ -285,6 +289,7 @@ impl SDFObject {
                 chunk_id.1 * resolution,
                 chunk_id.2 * resolution,
             );
+            updated_boxes.push((**b, Vec3::new(chunk_start_pixel.0 as f32 / full_dimensions as f32, chunk_start_pixel.1 as f32 / full_dimensions as f32, chunk_start_pixel.2 as f32 / full_dimensions as f32, )));
             for (x, ix) in (0..resolution).map(|x| {
                 let ix = chunk_start_pixel.0 + x;
                 let x = x as f32;
@@ -302,14 +307,14 @@ impl SDFObject {
                     }) {
                         let point = Vec3::new(x, y, z);
                         let sdf = self.value_at_point(&point);
-                        let index = ix + iy * dimensons + iz * dimensons * dimensons;
+                        let index = ix + iy * full_dimensions + iz * full_dimensions * full_dimensions;
                         contents[index] = (sdf * 8. + 1.) as u8;
                     }
                 }
             }
         }
 
-        (full_dimensions as u32, contents)
+        (full_dimensions as u32, contents, updated_boxes, uv_box_size)
     }
 
     /// Generate box mesh
@@ -322,35 +327,19 @@ impl SDFObject {
         let lod_boxes = self.generate_lod_boxes(resolution, target_lod, min_box_size);
 
         if let Some((size, boxes)) = lod_boxes.last() {
-            let (mut positions, mut normals, mut uvs, mut indices) = (
+            let (mut positions, mut normals, mut uvs, mut place, mut indices) = (
                 Vec::<[f32; 3]>::new(),
                 Vec::<[f32; 3]>::new(),
-                Vec::<[f32; 2]>::new(),
+                Vec::<[f32; 4]>::new(),
+                Vec::<[f32;2]>::new(),
                 Vec::<u32>::new(),
             );
 
             let boxes: Vec<_> = boxes.iter().flatten().collect();
 
             let mut starting_index = 0u32;
-            for b in boxes.iter() {
-                let (next_index, mut position, mut normal, mut uv, mut local_indices) =
-                    build_box(b, *size, starting_index);
 
-                positions.append(&mut position);
-                normals.append(&mut normal);
-                uvs.append(&mut uv);
-                indices.append(&mut local_indices);
-
-                starting_index = next_index;
-            }
-            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-            mesh.set_indices(Some(Indices::U32(indices)));
-
-            let (dimension_size, texture_data) =
+            let (dimension_size, texture_data, box_uvs, uv_size) =
                 self.generate_texture_data_at_points(&boxes, size, resolution);
 
             let image = Image::new(
@@ -364,6 +353,27 @@ impl SDFObject {
                 TextureFormat::R8Unorm,
             );
 
+            for (b, uv_start) in box_uvs.iter() {
+                let (next_index, mut position, mut normal, mut placeholders, mut uv, mut local_indices) =
+                    build_box(b, *size, starting_index, uv_start, uv_size);
+
+                positions.append(&mut position);
+                normals.append(&mut normal);
+
+                uvs.append(&mut uv);
+                indices.append(&mut local_indices);
+                place.append(&mut placeholders);
+
+                starting_index = next_index;
+            }
+            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, place);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, uvs);
+            mesh.set_indices(Some(Indices::U32(indices)));
+
             (mesh, image)
         } else {
             (Mesh::from(shape::Cube::default()), Image::default())
@@ -375,49 +385,54 @@ fn build_box(
     position: &Vec3,
     size: f32,
     start_index: u32,
-) -> (u32, Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32; 2]>, Vec<u32>) {
+    uv_start: &Vec3,
+    uv_size: f32,
+) -> (u32, Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32;2]>, Vec<[f32; 4]>, Vec<u32>) {
     bevy::log::info!("Building box @ {} {}", position, &size);
     let half_size = size / 2.;
 
     let min = *position - half_size;
     let max = *position + half_size;
+    let min_uv = *uv_start;
+    let max_uv = *uv_start + uv_size;
 
     let vertices = &[
         // Top
-        ([min.x, min.y, max.z], [0., 0., 1.0], [0., 0.]),
-        ([max.x, min.y, max.z], [0., 0., 1.0], [1.0, 0.]),
-        ([max.x, max.y, max.z], [0., 0., 1.0], [1.0, 1.0]),
-        ([min.x, max.y, max.z], [0., 0., 1.0], [0., 1.0]),
+        ([min.x, min.y, max.z], [0., 0., 1.0], [0.,0.,], [min_uv.x, min_uv.y, max_uv.z, 1.]),
+        ([max.x, min.y, max.z], [0., 0., 1.0], [0.,0.,], [max_uv.x, min_uv.y, max_uv.z, 1.]),
+        ([max.x, max.y, max.z], [0., 0., 1.0],[0.,0.,],  [max_uv.x, max_uv.y, max_uv.z, 1.]),
+        ([min.x, max.y, max.z], [0., 0., 1.0], [0.,0.,], [min_uv.x, max_uv.y, max_uv.z, 1.]),
         // Bottom
-        ([min.x, max.y, min.z], [0., 0., -1.0], [1.0, 0.]),
-        ([max.x, max.y, min.z], [0., 0., -1.0], [0., 0.]),
-        ([max.x, min.y, min.z], [0., 0., -1.0], [0., 1.0]),
-        ([min.x, min.y, min.z], [0., 0., -1.0], [1.0, 1.0]),
+        ([min.x, max.y, min.z], [0., 0., -1.0],[0.,0.,], [min_uv.x, max_uv.y, min_uv.z, 1.]),
+        ([max.x, max.y, min.z], [0., 0., -1.0],[0.,0.,], [max_uv.x, max_uv.y, min_uv.z, 1.]),
+        ([max.x, min.y, min.z], [0., 0., -1.0],[0.,0.,], [max_uv.x, min_uv.y, min_uv.z, 1.]),
+        ([min.x, min.y, min.z], [0., 0., -1.0],[0.,0.,], [min_uv.x, min_uv.y, min_uv.z, 1.]),
         // Right
-        ([max.x, min.y, min.z], [1.0, 0., 0.], [0., 0.]),
-        ([max.x, max.y, min.z], [1.0, 0., 0.], [1.0, 0.]),
-        ([max.x, max.y, max.z], [1.0, 0., 0.], [1.0, 1.0]),
-        ([max.x, min.y, max.z], [1.0, 0., 0.], [0., 1.0]),
+        ([max.x, min.y, min.z], [1.0, 0., 0.],[0.,0.,],  [max_uv.x, min_uv.y, min_uv.z, 1.]),
+        ([max.x, max.y, min.z], [1.0, 0., 0.],[0.,0.,],  [max_uv.x, max_uv.y, min_uv.z, 1.]),
+        ([max.x, max.y, max.z], [1.0, 0., 0.],[0.,0.,],  [max_uv.x, max_uv.y, max_uv.z, 1.]),
+        ([max.x, min.y, max.z], [1.0, 0., 0.],[0.,0.,],  [max_uv.x, min_uv.y, max_uv.z, 1.]),
         // Left
-        ([min.x, min.y, max.z], [-1.0, 0., 0.], [1.0, 0.]),
-        ([min.x, max.y, max.z], [-1.0, 0., 0.], [0., 0.]),
-        ([min.x, max.y, min.z], [-1.0, 0., 0.], [0., 1.0]),
-        ([min.x, min.y, min.z], [-1.0, 0., 0.], [1.0, 1.0]),
+        ([min.x, min.y, max.z], [-1.0, 0., 0.],[0.,0.,], [min_uv.x, min_uv.y, max_uv.z, 1.]),
+        ([min.x, max.y, max.z], [-1.0, 0., 0.],[0.,0.,], [min_uv.x, max_uv.y, max_uv.z, 1.]),
+        ([min.x, max.y, min.z], [-1.0, 0., 0.],[0.,0.,], [min_uv.x, max_uv.y, min_uv.z, 1.]),
+        ([min.x, min.y, min.z], [-1.0, 0., 0.],[0.,0.,], [min_uv.x, min_uv.y, min_uv.z, 1.]),
         // Front
-        ([max.x, max.y, min.z], [0., 1.0, 0.], [1.0, 0.]),
-        ([min.x, max.y, min.z], [0., 1.0, 0.], [0., 0.]),
-        ([min.x, max.y, max.z], [0., 1.0, 0.], [0., 1.0]),
-        ([max.x, max.y, max.z], [0., 1.0, 0.], [1.0, 1.0]),
+        ([max.x, max.y, min.z], [0., 1.0, 0.],[0.,0.,],  [max_uv.x, max_uv.y, min_uv.z, 1.]),
+        ([min.x, max.y, min.z], [0., 1.0, 0.],[0.,0.,],  [min_uv.x, max_uv.y, min_uv.z, 1.]),
+        ([min.x, max.y, max.z], [0., 1.0, 0.], [0.,0.,], [min_uv.x, max_uv.y, max_uv.z, 1.]),
+        ([max.x, max.y, max.z], [0., 1.0, 0.],[0.,0.,],  [max_uv.x, max_uv.y, max_uv.z, 1.]),
         // Back
-        ([max.x, min.y, max.z], [0., -1.0, 0.], [0., 0.]),
-        ([min.x, min.y, max.z], [0., -1.0, 0.], [1.0, 0.]),
-        ([min.x, min.y, min.z], [0., -1.0, 0.], [1.0, 1.0]),
-        ([max.x, min.y, min.z], [0., -1.0, 0.], [0., 1.0]),
+        ([max.x, min.y, max.z], [0., -1.0, 0.],[0.,0.,], [max_uv.x, min_uv.y, max_uv.z, 1.]),
+        ([min.x, min.y, max.z], [0., -1.0, 0.],[0.,0.,], [min_uv.x, min_uv.y, max_uv.z, 1.]),
+        ([min.x, min.y, min.z], [0., -1.0, 0.],[0.,0.,], [min_uv.x, min_uv.y, min_uv.z, 1.]),
+        ([max.x, min.y, min.z], [0., -1.0, 0.],[0.,0.,], [max_uv.x, min_uv.y, min_uv.z, 1.]),
     ];
 
-    let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
-    let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-    let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+    let positions: Vec<_> = vertices.iter().map(|(p, _, _, _)| *p).collect();
+    let normals: Vec<_> = vertices.iter().map(|(_, n, _, _)| *n).collect();
+    let uv_placeholders: Vec<_> = vertices.iter().map(|(_, _, uv, _)| *uv).collect();
+    let uvs: Vec<_> = vertices.iter().map(|(_, _, _, uv)| *uv).collect();
 
     let indices = [
         0, 1, 2, 2, 3, 0, // top
@@ -431,7 +446,7 @@ fn build_box(
     .map(|v| v + start_index)
     .collect();
     let next_index = positions.len() as u32 + start_index;
-    (next_index, positions, normals, uvs, indices)
+    (next_index, positions, normals, uv_placeholders, uvs, indices)
 }
 
 impl RenderAsset for SDFObject {

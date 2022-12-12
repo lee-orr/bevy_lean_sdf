@@ -4,8 +4,8 @@ use bevy::{
     reflect::TypeUuid,
     render::{
         extract_component::ExtractComponentPlugin, render_asset::RenderAssetPlugin,
-        render_resource::*,
-    },
+        render_resource::*, mesh::{MeshVertexBufferLayout, MeshVertexAttribute},
+    }, pbr::{MaterialPipeline, MaterialPipelineKey},
 };
 
 use bytemuck::{Pod, Zeroable};
@@ -33,6 +33,10 @@ pub struct SDFShader {
     #[sampler(1)]
     pub image: Handle<Image>,
 }
+
+/// UV 3D Attribute
+pub const ATTRIBUTE_UV_3D: MeshVertexAttribute =
+MeshVertexAttribute::new("UV_3D", 463763473457, VertexFormat::Float32x3);
 
 impl Material for SDFShader {
     fn alpha_mode(&self) -> AlphaMode {
