@@ -32,7 +32,7 @@ bitflags = "*"
 [dev-dependencies]
 criterion = "0.4.0"
 # We can use a different feature set of Bevy for our library vs our examples and tests
-bevy = { version = "0.9", default-features = true, features = ["dynamic"]}
+bevy = { version = "0.9", default-features = true}
 assert_float_eq = "1.1.3"
 
 

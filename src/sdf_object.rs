@@ -2,7 +2,7 @@
 use crate::{
     sdf_operations::SDFOperators,
     sdf_primitives::SDFPrimitive,
-    sdf_shader::{SDFInstanceData, SDFRenderAsset},
+    sdf_shader::{SDFShader},
 };
 use bevy::{
     ecs::system::lifetimeless::SRes,
@@ -128,8 +128,10 @@ pub struct SDFObject {
     pub elements: Vec<SDFElement>,
     /// The mesh handle for the current SDF object
     pub mesh_handle: Option<Handle<Mesh>>,
-    /// The mesh handle for the current SDF object
+    /// The image handle for the current SDF object
     pub image_handle: Option<Handle<Image>>,
+    /// The material handle for the current SDF object
+    pub material_handle: Option<Handle<SDFShader>>
 }
 
 impl SDFObject {
@@ -359,7 +361,7 @@ impl SDFObject {
                 },
                 TextureDimension::D3,
                 texture_data,
-                TextureFormat::R8Uint,
+                TextureFormat::R8Unorm,
             );
 
             (mesh, image)
@@ -435,7 +437,7 @@ fn build_box(
 impl RenderAsset for SDFObject {
     type ExtractedAsset = SDFObject;
 
-    type PreparedAsset = SDFRenderAsset;
+    type PreparedAsset = SDFShader;
 
     type Param = SRes<RenderDevice>;
 
@@ -451,19 +453,8 @@ impl RenderAsset for SDFObject {
         bevy::render::render_asset::PrepareAssetError<Self::ExtractedAsset>,
     > {
         bevy::log::info!("Preparing SDF Asset");
-        let boxes = sdf.generate_lod_boxes(8, 4, 0.5);
-        if let Some((size, boxes)) = boxes.last() {
-            let half_size = Vec3::ONE * *size / 2.;
-            Ok(SDFRenderAsset {
-                instance_data: boxes
-                    .iter()
-                    .flatten()
-                    .map(|b| {
-                        let _texture = sdf.generate_texture(8, &(*b - half_size, *b + half_size));
-                        SDFInstanceData { position: *b }
-                    })
-                    .collect(),
-            })
+        if let Some(handle) = sdf.image_handle.as_ref() {
+            Ok(SDFShader { image: handle.clone() })
         } else {
             Err(PrepareAssetError::RetryNextUpdate(sdf))
         }
@@ -562,6 +553,7 @@ mod tests {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
             image_handle: None,
+            material_handle: None,
         };
 
         let interior_a = sdf.value_at_point(&Vec3::X);
@@ -592,6 +584,7 @@ mod tests {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
             image_handle: None,
+            material_handle: None,
         };
 
         let center = sdf.value_at_point(&Vec3::ZERO);
@@ -622,6 +615,7 @@ mod tests {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
             image_handle: None,
+            material_handle: None,
         };
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
@@ -685,6 +679,7 @@ mod tests {
             elements: vec![sdf_a, sdf_b],
             mesh_handle: None,
             image_handle: None,
+            material_handle: None,
         };
 
         let bounds = sdf.get_bounds();
@@ -704,6 +699,7 @@ mod tests {
             elements: vec![sdf_a],
             mesh_handle: None,
             image_handle: None,
+            material_handle: None,
         };
 
         let result = sdf.generate_boxes(3, &sdf.get_bounds());
@@ -718,6 +714,7 @@ mod tests {
             elements: vec![sdf_a],
             mesh_handle: None,
             image_handle: None,
+            material_handle: None,
         };
 
         let result = sdf.generate_lod_boxes(3, 2, 0.1);
