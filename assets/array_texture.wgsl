@@ -27,9 +27,6 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     var pbr_input: PbrInput = pbr_input_new();
 
     pbr_input.material.base_color = textureSample(my_array_texture, my_array_texture_sampler, in.color.xyz);
-#ifdef VERTEX_COLORS
-    pbr_input.material.base_color = pbr_input.material.base_color * in.color;
-#endif
 
     pbr_input.frag_coord = in.frag_coord;
     pbr_input.world_position = in.world_position;
