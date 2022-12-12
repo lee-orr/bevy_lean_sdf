@@ -4,22 +4,20 @@
 #![doc = include_str!("../README.md")]
 
 use bevy::prelude::*;
+use sdf_shader::SDFShaderPlugin;
 
 pub mod utils;
 
 pub mod sdf_object;
 pub mod sdf_operations;
 pub mod sdf_primitives;
+pub mod sdf_shader;
 
 /// A plugin
-pub struct HelloWorldPlugin;
+pub struct SDFPlugin;
 
-impl Plugin for HelloWorldPlugin {
+impl Plugin for SDFPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(hello_world);
+        app.add_plugin(SDFShaderPlugin);
     }
-}
-
-fn hello_world() {
-    println!("Hello, World!");
 }

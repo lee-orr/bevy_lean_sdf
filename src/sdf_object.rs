@@ -1,6 +1,20 @@
 //! The root SDF object
-use crate::{sdf_operations::SDFOperators, sdf_primitives::SDFPrimitive};
-use bevy::prelude::*;
+use crate::{
+    sdf_operations::SDFOperators,
+    sdf_primitives::SDFPrimitive,
+    sdf_shader::{SDFInstanceData, SDFRenderAsset},
+};
+use bevy::{
+    ecs::system::lifetimeless::SRes,
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        mesh::{Indices, PrimitiveTopology},
+        render_asset::{PrepareAssetError, RenderAsset},
+        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        renderer::RenderDevice,
+    },
+};
 
 /// A single SDF Element
 #[derive(Debug, Clone)]
@@ -89,21 +103,370 @@ impl SDFElement {
         let value = self.value_at_point(point);
         self.operation.value(&previous, &value)
     }
+
+    /// Get the bounds of the element, potentially given a previous element
+    pub fn get_bounds(&self, previous: &Option<(Vec3, Vec3)>) -> (Vec3, Vec3) {
+        let bounds = self.primitive.get_bounds();
+        let bounds = (
+            self.transform.transform_point3(bounds.0),
+            self.transform.transform_point3(bounds.1),
+        );
+        let mut bounds = (bounds.0.min(bounds.1), bounds.0.max(bounds.1));
+
+        if let Some(previous) = previous {
+            bounds = self.operation.get_bounds(previous, &bounds);
+        }
+        bounds
+    }
 }
 
 /// The root SDF object
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypeUuid, Default)]
+#[uuid = "3e9f6f3f-730c-46d1-8e12-4715f4c6f861"]
 pub struct SDFObject {
     /// A list of all the elements in the SDF
     pub elements: Vec<SDFElement>,
+    /// The mesh handle for the current SDF object
+    pub mesh_handle: Option<Handle<Mesh>>,
+    /// The mesh handle for the current SDF object
+    pub image_handle: Option<Handle<Image>>,
 }
 
 impl SDFObject {
+    /// Add Element
+    pub fn with_element(mut self, element: SDFElement) -> Self {
+        self.elements.push(element);
+        self
+    }
+
     /// Calculate the value of the SDF Object at a given point
     pub fn value_at_point(&self, point: &Vec3) -> f32 {
         self.elements.iter().fold(f32::INFINITY, |value, element| {
             element.process_object_at_point(point, value)
         })
+    }
+
+    /// Calculate SDF Object bounds
+    pub fn get_bounds(&self) -> (Vec3, Vec3) {
+        self.elements
+            .iter()
+            .fold(None, |value, element| Some(element.get_bounds(&value)))
+            .unwrap_or((Vec3::ZERO, Vec3::ZERO))
+    }
+
+    /// Get the locations of boxes designed to cover the surface at a given size
+    pub fn generate_boxes(&self, resolution: usize, bounds: &(Vec3, Vec3)) -> (f32, Vec<Vec3>) {
+        let size = (bounds.1 - bounds.0).max_element();
+        let box_size = size / (resolution as f32);
+        let half_box_size = box_size / 2.;
+        let mut boxes: Vec<Vec3> = Vec::new();
+        for x in (0..resolution).map(|x| {
+            let x = x as f32;
+            bounds.0.x + x * box_size + half_box_size
+        }) {
+            for y in (0..resolution).map(|y| {
+                let y = y as f32;
+                bounds.0.y + y * box_size + half_box_size
+            }) {
+                for z in (0..resolution).map(|z| {
+                    let z = z as f32;
+                    bounds.0.z + z * box_size + half_box_size
+                }) {
+                    let point = Vec3::new(x, y, z);
+                    let sdf = self.value_at_point(&point);
+                    if sdf <= box_size && sdf >= -box_size {
+                        boxes.push(point);
+                    }
+                }
+            }
+        }
+        (box_size, boxes)
+    }
+
+    /// Generate the contents of a texture
+    pub fn generate_texture(&self, resolution: usize, bounds: &(Vec3, Vec3)) -> Vec<u8> {
+        let size = (bounds.1 - bounds.0).max_element();
+        let box_size = size / (resolution as f32);
+        let half_box_size = box_size / 2.;
+        let mut boxes: Vec<u8> = Vec::new();
+        for x in (0..resolution).map(|x| {
+            let x = x as f32;
+            bounds.0.x + x * box_size + half_box_size
+        }) {
+            for y in (0..resolution).map(|y| {
+                let y = y as f32;
+                bounds.0.y + y * box_size + half_box_size
+            }) {
+                for z in (0..resolution).map(|z| {
+                    let z = z as f32;
+                    bounds.0.z + z * box_size + half_box_size
+                }) {
+                    let point = Vec3::new(x, y, z);
+                    let sdf = self.value_at_point(&point);
+                    if sdf <= box_size && sdf >= -box_size {
+                        boxes.push(1);
+                    } else {
+                        boxes.push(0);
+                    }
+                }
+            }
+        }
+        boxes
+    }
+
+    /// Get locations of boxes at all LODs
+    pub fn generate_lod_boxes(
+        &self,
+        resolution: usize,
+        max_lods: usize,
+        min_box_size: f32,
+    ) -> Vec<(f32, Vec<Vec<Vec3>>)> {
+        let bounds = self.get_bounds();
+        let mut lods: Vec<(f32, Vec<Vec<Vec3>>)> = Vec::new();
+
+        loop {
+            bevy::log::info!(
+                "Getting box data for LOD {}, max is {}",
+                lods.len(),
+                &max_lods
+            );
+            if lods.len() >= max_lods {
+                break;
+            }
+            if let Some((last_lod_size, last_lod_vecs)) = lods.last() {
+                if *last_lod_size < min_box_size {
+                    break;
+                }
+                let lod_half_size = last_lod_size / 2.;
+                let mut lod = Vec::<Vec<Vec3>>::new();
+                let mut new_size = lod_half_size / (resolution as f32);
+                for current in last_lod_vecs.iter().flatten() {
+                    let result = self.generate_boxes(
+                        resolution,
+                        &(*current - lod_half_size, *current + lod_half_size),
+                    );
+                    new_size = result.0;
+                    lod.push(result.1);
+                }
+                lods.push((new_size, lod));
+            } else {
+                let result = self.generate_boxes(resolution, &bounds);
+                lods.push((result.0, vec![result.1]));
+            }
+        }
+
+        lods
+    }
+
+    fn generate_texture_data_at_points(
+        &self,
+        boxes: &Vec<&Vec3>,
+        size: &f32,
+        resolution: usize,
+    ) -> (u32, Vec<u8>) {
+        let box_size = *size;
+        let half_size = box_size / 2.;
+        let dimensons = (boxes.len() as f32).cbrt() as usize + 1;
+        let full_dimensions = dimensons * resolution;
+        let capacity = full_dimensions * full_dimensions * full_dimensions;
+        let mut contents = (0..capacity).map(|_| 0u8).collect::<Vec<_>>();
+
+        for (index, b) in boxes.iter().enumerate() {
+            let bounds = (**b - half_size, **b + half_size);
+            let chunk_id = (
+                index % dimensons,
+                (index / dimensons) % dimensons,
+                index / (dimensons * dimensons),
+            );
+            let chunk_start_pixel = (
+                chunk_id.0 * resolution,
+                chunk_id.1 * resolution,
+                chunk_id.2 * resolution,
+            );
+            for (x, ix) in (0..resolution).map(|x| {
+                let ix = chunk_start_pixel.0 + x;
+                let x = x as f32;
+                (bounds.0.x + x * box_size + half_size, ix)
+            }) {
+                for (y, iy) in (0..resolution).map(|y| {
+                    let iy = chunk_start_pixel.1 + y;
+                    let y = y as f32;
+                    (bounds.0.y + y * box_size + half_size, iy)
+                }) {
+                    for (z, iz) in (0..resolution).map(|z| {
+                        let iz = chunk_start_pixel.2 + z;
+                        let z = z as f32;
+                        (bounds.0.z + z * box_size + half_size, iz)
+                    }) {
+                        let point = Vec3::new(x, y, z);
+                        let sdf = self.value_at_point(&point);
+                        let index = ix + iy * dimensons + iz * dimensons * dimensons;
+                        contents[index] = (sdf * 8. + 1.) as u8;
+                    }
+                }
+            }
+        }
+
+        (full_dimensions as u32, contents)
+    }
+
+    /// Generate box mesh
+    pub fn generate_mesh_and_texture(
+        &self,
+        resolution: usize,
+        target_lod: usize,
+        min_box_size: f32,
+    ) -> (Mesh, Image) {
+        let lod_boxes = self.generate_lod_boxes(resolution, target_lod, min_box_size);
+
+        if let Some((size, boxes)) = lod_boxes.last() {
+            let (mut positions, mut normals, mut uvs, mut indices) = (
+                Vec::<[f32; 3]>::new(),
+                Vec::<[f32; 3]>::new(),
+                Vec::<[f32; 2]>::new(),
+                Vec::<u32>::new(),
+            );
+
+            let boxes: Vec<_> = boxes.iter().flatten().collect();
+
+            let mut starting_index = 0u32;
+            for b in boxes.iter() {
+                let (next_index, mut position, mut normal, mut uv, mut local_indices) =
+                    build_box(b, *size, starting_index);
+
+                positions.append(&mut position);
+                normals.append(&mut normal);
+                uvs.append(&mut uv);
+                indices.append(&mut local_indices);
+
+                starting_index = next_index;
+            }
+            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+            mesh.set_indices(Some(Indices::U32(indices)));
+
+            let (dimension_size, texture_data) =
+                self.generate_texture_data_at_points(&boxes, size, resolution);
+
+            let image = Image::new(
+                Extent3d {
+                    width: dimension_size,
+                    height: dimension_size,
+                    depth_or_array_layers: dimension_size,
+                },
+                TextureDimension::D3,
+                texture_data,
+                TextureFormat::R8Uint,
+            );
+
+            (mesh, image)
+        } else {
+            (Mesh::from(shape::Cube::default()), Image::default())
+        }
+    }
+}
+
+fn build_box(
+    position: &Vec3,
+    size: f32,
+    start_index: u32,
+) -> (u32, Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<[f32; 2]>, Vec<u32>) {
+    bevy::log::info!("Building box @ {} {}", position, &size);
+    let half_size = size / 2.;
+
+    let min = *position - half_size;
+    let max = *position + half_size;
+
+    let vertices = &[
+        // Top
+        ([min.x, min.y, max.z], [0., 0., 1.0], [0., 0.]),
+        ([max.x, min.y, max.z], [0., 0., 1.0], [1.0, 0.]),
+        ([max.x, max.y, max.z], [0., 0., 1.0], [1.0, 1.0]),
+        ([min.x, max.y, max.z], [0., 0., 1.0], [0., 1.0]),
+        // Bottom
+        ([min.x, max.y, min.z], [0., 0., -1.0], [1.0, 0.]),
+        ([max.x, max.y, min.z], [0., 0., -1.0], [0., 0.]),
+        ([max.x, min.y, min.z], [0., 0., -1.0], [0., 1.0]),
+        ([min.x, min.y, min.z], [0., 0., -1.0], [1.0, 1.0]),
+        // Right
+        ([max.x, min.y, min.z], [1.0, 0., 0.], [0., 0.]),
+        ([max.x, max.y, min.z], [1.0, 0., 0.], [1.0, 0.]),
+        ([max.x, max.y, max.z], [1.0, 0., 0.], [1.0, 1.0]),
+        ([max.x, min.y, max.z], [1.0, 0., 0.], [0., 1.0]),
+        // Left
+        ([min.x, min.y, max.z], [-1.0, 0., 0.], [1.0, 0.]),
+        ([min.x, max.y, max.z], [-1.0, 0., 0.], [0., 0.]),
+        ([min.x, max.y, min.z], [-1.0, 0., 0.], [0., 1.0]),
+        ([min.x, min.y, min.z], [-1.0, 0., 0.], [1.0, 1.0]),
+        // Front
+        ([max.x, max.y, min.z], [0., 1.0, 0.], [1.0, 0.]),
+        ([min.x, max.y, min.z], [0., 1.0, 0.], [0., 0.]),
+        ([min.x, max.y, max.z], [0., 1.0, 0.], [0., 1.0]),
+        ([max.x, max.y, max.z], [0., 1.0, 0.], [1.0, 1.0]),
+        // Back
+        ([max.x, min.y, max.z], [0., -1.0, 0.], [0., 0.]),
+        ([min.x, min.y, max.z], [0., -1.0, 0.], [1.0, 0.]),
+        ([min.x, min.y, min.z], [0., -1.0, 0.], [1.0, 1.0]),
+        ([max.x, min.y, min.z], [0., -1.0, 0.], [0., 1.0]),
+    ];
+
+    let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
+    let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
+    let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+    let indices = [
+        0, 1, 2, 2, 3, 0, // top
+        4, 5, 6, 6, 7, 4, // bottom
+        8, 9, 10, 10, 11, 8, // right
+        12, 13, 14, 14, 15, 12, // left
+        16, 17, 18, 18, 19, 16, // front
+        20, 21, 22, 22, 23, 20, // back
+    ]
+    .iter()
+    .map(|v| v + start_index)
+    .collect();
+    let next_index = positions.len() as u32 + start_index;
+    (next_index, positions, normals, uvs, indices)
+}
+
+impl RenderAsset for SDFObject {
+    type ExtractedAsset = SDFObject;
+
+    type PreparedAsset = SDFRenderAsset;
+
+    type Param = SRes<RenderDevice>;
+
+    fn extract_asset(&self) -> Self::ExtractedAsset {
+        self.clone()
+    }
+
+    fn prepare_asset(
+        sdf: Self::ExtractedAsset,
+        _param: &mut bevy::ecs::system::SystemParamItem<Self::Param>,
+    ) -> Result<
+        Self::PreparedAsset,
+        bevy::render::render_asset::PrepareAssetError<Self::ExtractedAsset>,
+    > {
+        bevy::log::info!("Preparing SDF Asset");
+        let boxes = sdf.generate_lod_boxes(8, 4, 0.5);
+        if let Some((size, boxes)) = boxes.last() {
+            let half_size = Vec3::ONE * *size / 2.;
+            Ok(SDFRenderAsset {
+                instance_data: boxes
+                    .iter()
+                    .flatten()
+                    .map(|b| {
+                        let _texture = sdf.generate_texture(8, &(*b - half_size, *b + half_size));
+                        SDFInstanceData { position: *b }
+                    })
+                    .collect(),
+            })
+        } else {
+            Err(PrepareAssetError::RetryNextUpdate(sdf))
+        }
     }
 }
 
@@ -197,6 +560,8 @@ mod tests {
         let sdf_b = SDFElement::default().with_translation(-1. * Vec3::X);
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
+            mesh_handle: None,
+            image_handle: None,
         };
 
         let interior_a = sdf.value_at_point(&Vec3::X);
@@ -225,6 +590,8 @@ mod tests {
         };
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
+            mesh_handle: None,
+            image_handle: None,
         };
 
         let center = sdf.value_at_point(&Vec3::ZERO);
@@ -253,6 +620,8 @@ mod tests {
         };
         let sdf = SDFObject {
             elements: vec![sdf_a, sdf_b],
+            mesh_handle: None,
+            image_handle: None,
         };
 
         let interior = sdf.value_at_point(&Vec3::ZERO);
@@ -262,5 +631,101 @@ mod tests {
         assert_float_absolute_eq!(interior, -1.);
         assert_float_absolute_eq!(surface, 0.);
         assert_float_absolute_eq!(outside, 0.5);
+    }
+
+    #[test]
+    fn translates_bounds() {
+        let sdf = SDFElement::default().with_translation(Vec3::X);
+
+        let bounds = sdf.get_bounds(&None);
+
+        assert_float_absolute_eq!(bounds.0.x, 0.);
+        assert_float_absolute_eq!(bounds.0.y, -1.);
+        assert_float_absolute_eq!(bounds.0.z, -1.);
+        assert_float_absolute_eq!(bounds.1.x, 2.);
+        assert_float_absolute_eq!(bounds.1.y, 1.);
+        assert_float_absolute_eq!(bounds.1.z, 1.);
+    }
+
+    #[test]
+    fn rotates_bounds() {
+        let sdf = SDFElement::default()
+            .with_primitive(SDFPrimitive::Box(Vec3::new(1., 2., 0.5)))
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0., 90. * PI / 180., 0.));
+
+        let bounds = sdf.get_bounds(&None);
+
+        assert_float_absolute_eq!(bounds.0.x, -0.5);
+        assert_float_absolute_eq!(bounds.0.y, -2.);
+        assert_float_absolute_eq!(bounds.0.z, -1.);
+        assert_float_absolute_eq!(bounds.1.x, 0.5);
+        assert_float_absolute_eq!(bounds.1.y, 2.);
+        assert_float_absolute_eq!(bounds.1.z, 1.);
+    }
+
+    #[test]
+    fn scales_bounds() {
+        let sdf = SDFElement::default().with_scale(2.);
+
+        let bounds = sdf.get_bounds(&None);
+
+        assert_float_absolute_eq!(bounds.0.x, -2.);
+        assert_float_absolute_eq!(bounds.0.y, -2.);
+        assert_float_absolute_eq!(bounds.0.z, -2.);
+        assert_float_absolute_eq!(bounds.1.x, 2.);
+        assert_float_absolute_eq!(bounds.1.y, 2.);
+        assert_float_absolute_eq!(bounds.1.z, 2.);
+    }
+
+    #[test]
+    fn bounds_of_multiple_elements() {
+        let sdf_a = SDFElement::default().with_translation(Vec3::X);
+        let sdf_b = SDFElement::default().with_translation(-1. * Vec3::X);
+        let sdf = SDFObject {
+            elements: vec![sdf_a, sdf_b],
+            mesh_handle: None,
+            image_handle: None,
+        };
+
+        let bounds = sdf.get_bounds();
+
+        assert_float_absolute_eq!(bounds.0.x, -2.);
+        assert_float_absolute_eq!(bounds.0.y, -1.);
+        assert_float_absolute_eq!(bounds.0.z, -1.);
+        assert_float_absolute_eq!(bounds.1.x, 2.);
+        assert_float_absolute_eq!(bounds.1.y, 1.);
+        assert_float_absolute_eq!(bounds.1.z, 1.);
+    }
+
+    #[test]
+    fn generate_boxes_on_surface() {
+        let sdf_a = SDFElement::default().with_primitive(SDFPrimitive::Box(Vec3::ONE));
+        let sdf = SDFObject {
+            elements: vec![sdf_a],
+            mesh_handle: None,
+            image_handle: None,
+        };
+
+        let result = sdf.generate_boxes(3, &sdf.get_bounds());
+        assert_float_absolute_eq!(result.0, 2. / 3.);
+        assert_eq!(result.1.len(), 9 * 2 + 8);
+    }
+
+    #[test]
+    fn generate_boxes_on_surface_with_lod() {
+        let sdf_a = SDFElement::default().with_primitive(SDFPrimitive::Box(Vec3::ONE));
+        let sdf = SDFObject {
+            elements: vec![sdf_a],
+            mesh_handle: None,
+            image_handle: None,
+        };
+
+        let result = sdf.generate_lod_boxes(3, 2, 0.1);
+        assert_eq!(result.len(), 2);
+        assert_float_absolute_eq!(result[0].0, 2. / 3.);
+        assert_eq!(result[0].1[0].len(), 9 * 2 + 8);
+        assert_float_absolute_eq!(result[1].0, 2. / 9.);
+        assert_eq!(result[1].1.len(), 9 * 2 + 8);
+        assert_eq!(result[1].1[0].len(), 19);
     }
 }
