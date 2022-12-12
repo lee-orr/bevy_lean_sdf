@@ -19,7 +19,7 @@ opt-level = 3
 members = ["./", "tools/ci"]
 
 [dependencies]
-bevy = { version = "0.8", default-features = false}
+bevy = { version = "0.9", default-features = false}
 
 [patch.crates-io]
 # We can override the bevy version with remote or local versions
@@ -28,9 +28,9 @@ bevy = { version = "0.8", default-features = false}
 #bevy = { path = "../bevy" }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4.0"
 # We can use a different feature set of Bevy for our library vs our examples and tests
-bevy = { version = "0.8", default-features = false, features = ["dynamic"]}
+bevy = { version = "0.9", default-features = false, features = ["dynamic"]}
 assert_float_eq = "1.1.3"
 
 
