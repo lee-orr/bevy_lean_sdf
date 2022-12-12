@@ -1,6 +1,7 @@
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
+    window::PresentMode,
 };
 use template_lib::{
     sdf_object::{SDFElement, SDFObject},
@@ -11,7 +12,13 @@ use template_lib::{
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            window: WindowDescriptor {
+                present_mode: PresentMode::AutoNoVsync,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
         .add_plugin(SDFShaderPlugin)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(LogDiagnosticsPlugin::default())
@@ -43,12 +50,12 @@ fn setup(
             .with_operation(SDFOperators::Subtraction),
     );
 
-    let (sdf_mesh, sdf_image) = sdf.generate_mesh_and_texture(8, 2, 0.1);
+    let (sdf_mesh, sdf_image) = sdf.generate_mesh_and_texture(8, 1, 0.5);
 
     let _ = meshes.set(mesh.clone(), sdf_mesh);
     let _ = images.set(image, sdf_image);
     let sdf = sdfs.add(sdf);
-    commands.spawn_bundle((
+    commands.spawn((
         mesh,
         mat,
         sdf,
@@ -59,7 +66,7 @@ fn setup(
     ));
 
     // light
-    commands.spawn_bundle(PointLightBundle {
+    commands.spawn(PointLightBundle {
         point_light: PointLight {
             intensity: 1500.0,
             shadows_enabled: true,
@@ -69,7 +76,7 @@ fn setup(
         ..default()
     });
     // camera
-    commands.spawn_bundle(Camera3dBundle {
+    commands.spawn(Camera3dBundle {
         transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
